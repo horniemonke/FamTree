@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cây Gia Phả Tương Tác</title>
+    <!-- Sử dụng Tailwind CSS cho giao diện -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Sử dụng D3.js để vẽ cấu trúc cây phức tạp -->
+    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <style>
+        body { 
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
+            background-color: #fdfbf7; /* Màu nền hơi vàng hoài cổ */
+            overflow: hidden;
+        }
+        /* CSS cho D3 Tree */
+        .node rect {
+            fill: #fff8eb;
+            stroke: #8b5a2b; /* Màu nâu gỗ */
+            stroke-width: 2px;
+            rx: 8px; /* Bo góc */
+            transition: all 0.2s ease;
+        }
+        .node rect:hover {
+            fill: #f5e4c6;
+            stroke-width: 3px;
+            cursor: pointer;
+        }
+        .node text { 
+            font-size: 14px;
+            font-weight: 500;
+            fill: #333;
+            pointer-events: none; /* Tránh text cản trở sự kiện click */
+        }
+        .node text.generation {
+            font-size: 11px;
+            fill: #8b5a2b;
+            font-style: italic;
+        }
+        .link { 
+            fill: none; 
+            stroke: #d4a373; 
+            stroke-width: 2px; 
+            opacity: 0.7;
+        }
+        #tree-container { 
+            width: 100vw; 
+            height: calc(100vh - 64px); 
+            cursor: grab; 
+        }
+        #tree-container:active { cursor: grabbing; }
+        
+        /* Modal */
+        .modal-overlay { 
+            display: none; 
+            background: rgba(0,0,0,0.4); 
+            backdrop-filter: blur(2px);
+        }
+        .modal-overlay.active { display: flex; }
+    </style>
+</head>
+<body class="flex flex-col h-screen">
+
+    <!-- Thanh công cụ (Header) -->
+    <header class="bg-amber-800 text-white p-3 shadow-md flex justify-between items-center h-16 z-10">
+        <div class="flex items-center gap-3">
+            <h1 class="text-xl font-bold">🌳 Cây Gia Phả</h1>
+            <span class="text-amber-200 text-sm hidden md:inline-block">| Có thể mở rộng không giới hạn (tối ưu cho 8-10 đời)</span>
+        </div>
+        <div class="flex gap-2">
+            <button onclick="zoomToFit()" class="bg-amber-700 hover:bg-amber-600 px-3 py-1.5 rounded text-sm transition">
+                Chỉnh lại góc nhìn
+            </button>
+            <button onclick="exportData()" class="bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded text-sm transition font-medium">
+                💾 Tải file dữ liệu
+            </button>
+            <label class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm transition font-medium cursor-pointer">
+                📂 Mở file
+                <input type="file" id="import-file" class="hidden" accept=".json" onchange="importData(event)">
+            </label>
+        </div>
+    </header>
+
+    <!-- Khu vực vẽ cây -->
+    <svg id="tree-container"></svg>
+
+    <!-- Hướng dẫn nhanh -->
+    <div class="fixed bottom-4 left-4 bg-white/90 p-3 rounded-lg shadow-lg border border-amber-200 text-sm text-gray-700 pointer-events-none z-10 max-w-sm">
+        <p><strong>💡 Hướng dẫn:</strong></p>
+        <ul class="list-disc pl-5 mt-1 space-y-1">
+            <li><strong>Lăn chuột</strong> để Phóng to / Thu nhỏ.</li>
+            <li><strong>Nhấn và kéo</strong> vùng trống để di chuyển.</li>
+            <li><strong>Bấm vào một người</strong> để Chỉnh sửa, Thêm con hoặc Xóa.</li>
+        </ul>
+    </div>
+
+    <!-- Modal chỉnh sửa thành viên -->
+    <div id="edit-modal" class="modal-overlay fixed inset-0 z-50 items-center justify-center">
+        <div class="bg-white rounded-xl shadow-2xl w-96 max-w-[90%] overflow-hidden">
+            <div class="bg-amber-700 p-4 text-white">
+                <h2 class="text-lg font-bold" id="modal-title">Thông tin thành viên</h2>
+            </div>
+            <div class="p-5 space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Họ và tên</label>
+                    <input type="text" id="member-name" class="w-full border border-gray-300 px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Nhập họ tên...">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Thông tin phụ (Năm sinh, Vợ/Chồng, v.v...)</label>
+                    <input type="text" id="member-desc" class="w-full border border-gray-300 px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="VD: 1950 - 2020">
+                </div>
+                
+                <div class="pt-3 border-t border-gray-100 flex flex-wrap gap-2">
+                    <button onclick="addChild()" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-md text-sm transition">
+                        + Thêm con
+                    </button>
+                    <button onclick="deleteMember()" id="btn-delete" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-3 rounded-md text-sm transition">
+                        🗑️ Xóa người này
+                    </button>
+                </div>
+            </div>
+            <div class="bg-gray-50 p-4 flex justify-end gap-2">
+                <button onclick="closeModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-md transition text-sm">Hủy</button>
+                <button onclick="saveMember()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md transition text-sm font-medium">Lưu thay đổi</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // ================= DỮ LIỆU MẶC ĐỊNH =================
+        let idCounter = 100;
+        
+        // Tạo một cấu trúc mẫu 8 đời tuyến tính để làm ví dụ
+        const defaultData = {
+            id: 1, name: "Cụ Khởi Tổ", desc: "Đời 1",
+            children: [{
+                id: 2, name: "Ông Tổ Đời 2", desc: "Đời 2",
+                children: [{
+                    id: 3, name: "Ông Tổ Đời 3", desc: "Đời 3",
+                    children: [{
+                        id: 4, name: "Ông Tổ Đời 4", desc: "Đời 4",
+                        children: [{
+                            id: 5, name: "Ông Tổ Đời 5", desc: "Đời 5",
+                            children: [{
+                                id: 6, name: "Ông Tổ Đời 6", desc: "Đời 6",
+                                children: [{
+                                    id: 7, name: "Ông Tổ Đời 7", desc: "Đời 7",
+                                    children: [{
+                                        id: 8, name: "Hậu duệ Đời 8", desc: "Đời 8"
+                                    }]
+                                }]
+                            }]
+                        }]
+                    }]
+                }]
+            }]
+        };
+
+        // Load từ localStorage nếu có, nếu không dùng mặc định
+        let treeData = JSON.parse(localStorage.getItem('familyTreeData')) || defaultData;
+
+        // ================= BIẾN TOÀN CỤC CHO D3 =================
+        const svg = d3.select("#tree-container");
+        const width = window.innerWidth;
+        const height = window.innerHeight - 64;
+        
+        const g = svg.append("g");
+
+        // Thiết lập Zoom & Pan
+        const zoom = d3.zoom()
+            .scaleExtent([0.1, 3]) // Phóng to tối đa 3x, thu nhỏ 0.1x
+            .on("zoom", (event) => {
+                g.attr("transform", event.transform);
+            });
+        
+        svg.call(zoom);
+
+        // Kích thước của mỗi "thẻ" người
+        const nodeWidth = 160;
+        const nodeHeight = 60;
+        
+        // Thiết lập cấu trúc Tree của D3 (nodeSize giúp cây tự động giãn theo chiều ngang bất kể số lượng con)
+        const treeLayout = d3.tree().nodeSize([nodeWidth + 40, 120]);
+
+        // ================= HÀM VẼ CÂY (RENDER) =================
+        function updateTree() {
+            // Chuyển đổi dữ liệu JSON thành D3 Hierarchy
+            const root = d3.hierarchy(treeData);
+            
+            // Áp dụng thuật toán layout
+            treeLayout(root);
+
+            // Cập nhật các đường nối (Links)
+            const link = g.selectAll(".link")
+                .data(root.links(), d => d.target.data.id);
+
+            link.enter()
+                .insert("path", "g")
+                .attr("class", "link")
+                .attr("d", d3.linkVertical()
+                    .x(d => d.x)
+                    .y(d => d.y + nodeHeight/2))
+                .merge(link)
+                .transition().duration(500)
+                .attr("d", d3.linkVertical()
+                    .x(d => d.x)
+                    .y(d => d.y + nodeHeight/2));
+
+            link.exit().remove();
+
+            // Cập nhật các khối người (Nodes)
+            const node = g.selectAll(".node")
+                .data(root.descendants(), d => d.data.id);
+
+            const nodeEnter = node.enter()
+                .append("g")
+                .attr("class", "node")
+                .attr("transform", d => `translate(${d.x},${d.y})`)
+                .on("click", (event, d) => openModal(d)); // Bấm vào để mở bảng chỉnh sửa
+
+            // Vẽ hình chữ nhật
+            nodeEnter.append("rect")
+                .attr("width", nodeWidth)
+                .attr("height", nodeHeight)
+                .attr("x", -nodeWidth / 2)
+                .attr("y", -nodeHeight / 2);
+
+            // Viết Tên
+            nodeEnter.append("text")
+                .attr("dy", "-5px")
+                .attr("text-anchor", "middle")
+                .text(d => truncateText(d.data.name, 20));
+
+            // Viết Mô tả (năm sinh / đời...)
+            nodeEnter.append("text")
+                .attr("class", "generation")
+                .attr("dy", "15px")
+                .attr("text-anchor", "middle")
+                .text(d => truncateText(d.data.desc || "", 25));
+
+            // Merge và Update vị trí
+            const nodeUpdate = nodeEnter.merge(node);
+            
+            nodeUpdate.transition().duration(500)
+                .attr("transform", d => `translate(${d.x},${d.y})`);
+            
+            // Cập nhật text trong trường hợp bị đổi tên
+            nodeUpdate.select("text").text(d => truncateText(d.data.name, 20));
+            nodeUpdate.select("text.generation").text(d => truncateText(d.data.desc || "", 25));
+
+            node.exit().remove();
+
+            // Tự động lưu trữ mỗi khi update
+            localStorage.setItem('familyTreeData', JSON.stringify(treeData));
+        }
+
+        // Cắt chữ nếu quá dài
+        function truncateText(text, length) {
+            if (!text) return "";
+            return text.length > length ? text.substring(0, length) + "..." : text;
+        }
+
+        // Đưa cây vào giữa màn hình
+        function zoomToFit() {
+            svg.transition().duration(750).call(
+                zoom.transform, 
+                d3.zoomIdentity.translate(width / 2, 80).scale(1)
+            );
+        }
+
+        // ================= XỬ LÝ MODAL (CHỈNH SỬA) =================
+        let currentNodeData = null; // Lưu trữ node đang được chỉnh sửa
+
+        function openModal(d) {
+            currentNodeData = d; // 'd' là object hierarchy của D3, chứa d.data là json gốc
+            
+            document.getElementById('member-name').value = d.data.name || "";
+            document.getElementById('member-desc').value = d.data.desc || "";
+            
+            // Nếu là người đứng đầu (cụ tổ), không cho phép xóa
+            const btnDelete = document.getElementById('btn-delete');
+            if (d.depth === 0) {
+                btnDelete.style.display = 'none';
+            } else {
+                btnDelete.style.display = 'block';
+            }
+
+            document.getElementById('edit-modal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('edit-modal').classList.remove('active');
+            currentNodeData = null;
+        }
+
+        function saveMember() {
+            if (!currentNodeData) return;
+            
+            const newName = document.getElementById('member-name').value.trim();
+            const newDesc = document.getElementById('member-desc').value.trim();
+            
+            if (newName === "") {
+                alert("Vui lòng nhập họ tên!");
+                return;
+            }
+
+            // Cập nhật vào data gốc
+            currentNodeData.data.name = newName;
+            currentNodeData.data.desc = newDesc;
+            
+            updateTree();
+            closeModal();
+        }
+
+        function addChild() {
+            if (!currentNodeData) return;
+            
+            // Khởi tạo mảng children nếu chưa có
+            if (!currentNodeData.data.children) {
+                currentNodeData.data.children = [];
+            }
+            
+            // Tính số đời tự động (Optional)
+            const currentGeneration = currentNodeData.depth + 1;
+
+            // Thêm người con vào data gốc
+            currentNodeData.data.children.push({
+                id: Date.now() + Math.floor(Math.random() * 1000), // Tạo ID duy nhất
+                name: "Thành viên mới",
+                desc: "Đời " + (currentGeneration + 1)
+            });
+            
+            updateTree();
+            closeModal();
+        }
+
+        function deleteMember() {
+            if (!currentNodeData) return;
+            
+            if (confirm(`Bạn có chắc chắn muốn xóa "${currentNodeData.data.name}" và toàn bộ hậu duệ của người này không?`)) {
+                // Tìm kiếm và xóa node con từ node cha
+                const parent = currentNodeData.parent;
+                if (parent) {
+                    const children = parent.data.children;
+                    const index = children.indexOf(currentNodeData.data);
+                    if (index > -1) {
+                        children.splice(index, 1);
+                    }
+                    // Nếu mảng rỗng thì xóa luôn thuộc tính children
+                    if (children.length === 0) {
+                        delete parent.data.children;
+                    }
+                }
+                updateTree();
+                closeModal();
+            }
+        }
+
+        // ================= NHẬP / XUẤT DỮ LIỆU (JSON) =================
+        function exportData() {
+            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(treeData, null, 2));
+            const downloadAnchorNode = document.createElement('a');
+            downloadAnchorNode.setAttribute("href",     dataStr);
+            downloadAnchorNode.setAttribute("download", "du_lieu_gia_pha.json");
+            document.body.appendChild(downloadAnchorNode); // Bắt buộc cho firefox
+            downloadAnchorNode.click();
+            downloadAnchorNode.remove();
+        }
+
+        function importData(event) {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const importedData = JSON.parse(e.target.result);
+                        if (importedData && importedData.name) {
+                            treeData = importedData;
+                            localStorage.setItem('familyTreeData', JSON.stringify(treeData));
+                            updateTree();
+                            zoomToFit();
+                            alert("Đã tải dữ liệu gia phả thành công!");
+                        } else {
+                            alert("File không đúng định dạng!");
+                        }
+                    } catch (err) {
+                        alert("Lỗi khi đọc file. Vui lòng đảm bảo đây là file .json hợp lệ.");
+                    }
+                };
+                reader.readAsText(file);
+            }
+            // Reset input file để có thể chọn lại cùng 1 file
+            event.target.value = '';
+        }
+
+        // ================= KHỞI CHẠY =================
+        updateTree();
+        zoomToFit();
+
+        // Đóng modal khi bấm ra ngoài
+        document.getElementById('edit-modal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeModal();
+            }
+        });
+    </script>
+</body>
+</html>
