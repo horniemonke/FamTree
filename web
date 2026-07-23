@@ -1,409 +1,681 @@
 <!DOCTYPE html>
-<html lang="vi">
+<html lang="vi" class="h-full">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Cây Gia Phả Tương Tác</title>
-    <!-- Sử dụng Tailwind CSS cho giao diện -->
+    <title>Whiteboard Cây Gia Phả</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Sử dụng D3.js để vẽ cấu trúc cây phức tạp -->
-    <script src="https://d3js.org/d3.v7.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <style>
-        body { 
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; 
-            background-color: #fdfbf7; /* Màu nền hơi vàng hoài cổ */
+        body {
+            font-family: 'Inter', sans-serif;
+            user-select: none;
             overflow: hidden;
         }
-        /* CSS cho D3 Tree */
-        .node rect {
-            fill: #fff8eb;
-            stroke: #8b5a2b; /* Màu nâu gỗ */
-            stroke-width: 2px;
-            rx: 8px; /* Bo góc */
-            transition: all 0.2s ease;
+        .dot-grid {
+            background-image: radial-gradient(#cbd5e1 1.5px, transparent 1.5px);
+            background-size: 24px 24px;
         }
-        .node rect:hover {
-            fill: #f5e4c6;
-            stroke-width: 3px;
-            cursor: pointer;
+        .node-card {
+            transition: box-shadow 0.2s ease, border-color 0.2s ease;
         }
-        .node text { 
-            font-size: 14px;
-            font-weight: 500;
-            fill: #333;
-            pointer-events: none; /* Tránh text cản trở sự kiện click */
+        .node-card:hover {
+            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
         }
-        .node text.generation {
-            font-size: 11px;
-            fill: #8b5a2b;
-            font-style: italic;
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
         }
-        .link { 
-            fill: none; 
-            stroke: #d4a373; 
-            stroke-width: 2px; 
-            opacity: 0.7;
+        ::-webkit-scrollbar-track {
+            background: #f1f5f9;
         }
-        #tree-container { 
-            width: 100vw; 
-            height: calc(100vh - 64px); 
-            cursor: grab; 
+        ::-webkit-scrollbar-thumb {
+            background: #cbd5e1;
+            border-radius: 3px;
         }
-        #tree-container:active { cursor: grabbing; }
-        
-        /* Modal */
-        .modal-overlay { 
-            display: none; 
-            background: rgba(0,0,0,0.4); 
-            backdrop-filter: blur(2px);
+        ::-webkit-scrollbar-thumb:hover {
+            background: #94a3b8;
         }
-        .modal-overlay.active { display: flex; }
     </style>
 </head>
-<body class="flex flex-col h-screen">
+<body class="h-full bg-slate-50 flex flex-col">
 
-    <!-- Thanh công cụ (Header) -->
-    <header class="bg-amber-800 text-white p-3 shadow-md flex justify-between items-center h-16 z-10">
-        <div class="flex items-center gap-3">
-            <h1 class="text-xl font-bold">🌳 Cây Gia Phả</h1>
-            <span class="text-amber-200 text-sm hidden md:inline-block">| Có thể mở rộng không giới hạn (tối ưu cho 8-10 đời)</span>
+    <header class="h-16 bg-white border-b border-slate-200 flex items-center justify-between px-4 z-20 shadow-sm flex-shrink-0">
+        <div class="flex items-center space-x-3">
+            <div class="w-10 h-10 bg-indigo-600 rounded-xl flex items-center justify-center text-white shadow-md shadow-indigo-200">
+                <i class="fa-solid fa-sitemap text-lg"></i>
+            </div>
+            <div>
+                <h1 id="board-title" class="font-bold text-slate-800 text-base md:text-lg cursor-pointer hover:text-indigo-600 transition" title="Nhấp để đổi tên" onclick="renameBoard()">Cây Gia Phả Dòng Họ Nguyễn</h1>
+                <p class="text-xs text-slate-500">Bảng trắng vẽ cây gia phả tương tác</p>
+            </div>
         </div>
-        <div class="flex gap-2">
-            <button onclick="zoomToFit()" class="bg-amber-700 hover:bg-amber-600 px-3 py-1.5 rounded text-sm transition">
-                Chỉnh lại góc nhìn
+
+        <div class="hidden md:flex items-center space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+            <button onclick="setTool('select')" id="tool-select" class="px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-indigo-600 shadow-sm transition flex items-center gap-1.5">
+                <i class="fa-solid fa-arrow-pointer"></i> Chọn
             </button>
-            <button onclick="exportData()" class="bg-green-600 hover:bg-green-500 px-3 py-1.5 rounded text-sm transition font-medium">
-                💾 Tải file dữ liệu
+            <button onclick="setTool('connect')" id="tool-connect" class="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-1.5">
+                <i class="fa-solid fa-project-diagram"></i> Nối dây
             </button>
-            <label class="bg-blue-600 hover:bg-blue-500 px-3 py-1.5 rounded text-sm transition font-medium cursor-pointer">
-                📂 Mở file
-                <input type="file" id="import-file" class="hidden" accept=".json" onchange="importData(event)">
+            <button onclick="openAddModal()" class="px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-1.5">
+                <i class="fa-solid fa-user-plus text-indigo-600"></i> Thêm thành viên
+            </button>
+        </div>
+
+        <div class="flex items-center space-x-2">
+            <button onclick="loadTemplate()" class="hidden sm:flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition">
+                <i class="fa-solid fa-wand-magic-sparkles text-amber-500"></i> Mẫu sẵn
+            </button>
+            <button onclick="exportJSON()" class="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition" title="Lưu/Xuất dữ liệu">
+                <i class="fa-solid fa-download"></i> Lưu file
+            </button>
+            <label class="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-medium transition cursor-pointer" title="Mở file đã lưu">
+                <i class="fa-solid fa-upload"></i> Mở
+                <input type="file" id="import-file" accept=".json" class="hidden" onchange="importJSON(event)">
             </label>
+            <button onclick="clearBoard()" class="p-2 text-rose-500 hover:bg-rose-50 rounded-xl transition" title="Xóa toàn bộ bảng">
+                <i class="fa-solid fa-trash-can text-lg"></i>
+            </button>
         </div>
     </header>
 
-    <!-- Khu vực vẽ cây -->
-    <svg id="tree-container"></svg>
+    <div class="flex-1 relative overflow-hidden flex">
+        
+        <aside class="absolute left-4 top-4 z-10 flex flex-col space-y-2 bg-white/90 backdrop-blur-md p-2 rounded-2xl shadow-xl border border-slate-200">
+            <button onclick="openAddModal()" class="w-10 h-10 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl flex items-center justify-center shadow-md shadow-indigo-200 transition" title="Thêm thành viên mới">
+                <i class="fa-solid fa-plus text-base"></i>
+            </button>
+            <div class="w-full h-px bg-slate-200 my-1"></div>
+            <button onclick="zoomIn()" class="w-10 h-10 hover:bg-slate-100 text-slate-700 rounded-xl flex items-center justify-center transition" title="Phóng to">
+                <i class="fa-solid fa-magnifying-glass-plus"></i>
+            </button>
+            <button onclick="resetZoom()" class="w-10 h-10 hover:bg-slate-100 text-slate-700 rounded-xl flex items-center justify-center transition text-xs font-bold" title="Đặt lại tỷ lệ">
+                100%
+            </button>
+            <button onclick="zoomOut()" class="w-10 h-10 hover:bg-slate-100 text-slate-700 rounded-xl flex items-center justify-center transition" title="Thu nhỏ">
+                <i class="fa-solid fa-magnifying-glass-minus"></i>
+            </button>
+            <div class="w-full h-px bg-slate-200 my-1"></div>
+            <button onclick="centerView()" class="w-10 h-10 hover:bg-slate-100 text-slate-700 rounded-xl flex items-center justify-center transition" title="Căn giữa màn hình">
+                <i class="fa-solid fa-compress"></i>
+            </button>
+        </aside>
 
-    <!-- Hướng dẫn nhanh -->
-    <div class="fixed bottom-4 left-4 bg-white/90 p-3 rounded-lg shadow-lg border border-amber-200 text-sm text-gray-700 pointer-events-none z-10 max-w-sm">
-        <p><strong>💡 Hướng dẫn:</strong></p>
-        <ul class="list-disc pl-5 mt-1 space-y-1">
-            <li><strong>Lăn chuột</strong> để Phóng to / Thu nhỏ.</li>
-            <li><strong>Nhấn và kéo</strong> vùng trống để di chuyển.</li>
-            <li><strong>Bấm vào một người</strong> để Chỉnh sửa, Thêm con hoặc Xóa.</li>
-        </ul>
+        <div id="canvas-container" class="flex-1 relative dot-grid overflow-hidden cursor-grab active:cursor-grabbing">
+            
+            <svg id="connections-svg" class="absolute inset-0 w-full h-full pointer-events-none z-0 overflow-visible"></svg>
+
+            <div id="canvas-content" class="absolute inset-0 w-full h-full pointer-events-none origin-top-left">
+            </div>
+        </div>
+
+        <div id="inspector-panel" class="absolute right-4 top-4 bottom-4 w-80 bg-white/95 backdrop-blur-md rounded-2xl shadow-2xl border border-slate-200 z-10 flex flex-col hidden transform transition-transform duration-300">
+            <div class="p-4 border-b border-slate-100 flex items-center justify-between">
+                <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-user-pen text-indigo-600"></i> Thông tin thành viên
+                </h3>
+                <button onclick="closeInspector()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-4 space-y-4">
+                <input type="hidden" id="edit-id">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Họ và tên</label>
+                    <input type="text" id="edit-name" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Vai trò / Đời thứ</label>
+                    <input type="text" id="edit-role" placeholder="Ví dụ: Đời thứ 1 - Tổ khảo" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Năm sinh</label>
+                        <input type="text" id="edit-birth" placeholder="1950" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Năm mất (nếu có)</label>
+                        <input type="text" id="edit-death" placeholder="2020" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Giới tính</label>
+                    <select id="edit-gender" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="male">Nam (Khung xanh dương)</option>
+                        <option value="female">Nữ (Khung hồng)</option>
+                        <option value="neutral">Khác / Chung (Khung tím)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Ghi chú / Tiêu sử ngắn</label>
+                    <textarea id="edit-bio" rows="3" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none resize-none" placeholder="Nhập tiểu sử, thành tựu..."></textarea>
+                </div>
+            </div>
+            <div class="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 rounded-b-2xl">
+                <button onclick="deleteSelectedNode()" class="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-sm font-medium transition flex items-center gap-1.5">
+                    <i class="fa-solid fa-trash"></i> Xóa
+                </button>
+                <button onclick="saveInspectorChanges()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium shadow-md shadow-indigo-200 transition">
+                    Lưu thay đổi
+                </button>
+            </div>
+        </div>
+
     </div>
 
-    <!-- Modal chỉnh sửa thành viên -->
-    <div id="edit-modal" class="modal-overlay fixed inset-0 z-50 items-center justify-center">
-        <div class="bg-white rounded-xl shadow-2xl w-96 max-w-[90%] overflow-hidden">
-            <div class="bg-amber-700 p-4 text-white">
-                <h2 class="text-lg font-bold" id="modal-title">Thông tin thành viên</h2>
+    <!-- Modal Thêm Thành Viên -->
+    <div id="add-modal" class="fixed inset-0 bg-slate-900/50 backdrop-blur-sm z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden transform transition-all">
+            <div class="px-6 py-4 border-b border-slate-100 flex items-center justify-between bg-slate-50">
+                <h3 class="font-bold text-slate-800 flex items-center gap-2">
+                    <i class="fa-solid fa-user-plus text-indigo-600"></i> Thêm thành viên gia phả
+                </h3>
+                <button onclick="closeAddModal()" class="text-slate-400 hover:text-slate-600 p-1 rounded-lg">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
             </div>
-            <div class="p-5 space-y-4">
+            <div class="p-6 space-y-4">
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Họ và tên</label>
-                    <input type="text" id="member-name" class="w-full border border-gray-300 px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="Nhập họ tên...">
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Họ và tên *</label>
+                    <input type="text" id="new-name" placeholder="Ví dụ: Nguyễn Văn A" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                 </div>
                 <div>
-                    <label class="block text-sm font-medium text-gray-700 mb-1">Thông tin phụ (Năm sinh, Vợ/Chồng, v.v...)</label>
-                    <input type="text" id="member-desc" class="w-full border border-gray-300 px-3 py-2 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500" placeholder="VD: 1950 - 2020">
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Vai trò / Đời thứ</label>
+                    <input type="text" id="new-role" placeholder="Ví dụ: Đời thứ 2 - Trưởng nam" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
                 </div>
-                
-                <div class="pt-3 border-t border-gray-100 flex flex-wrap gap-2">
-                    <button onclick="addChild()" class="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 px-3 rounded-md text-sm transition">
-                        + Thêm con
-                    </button>
-                    <button onclick="deleteMember()" id="btn-delete" class="flex-1 bg-red-500 hover:bg-red-600 text-white py-2 px-3 rounded-md text-sm transition">
-                        🗑️ Xóa người này
-                    </button>
+                <div class="grid grid-cols-2 gap-2">
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Năm sinh</label>
+                        <input type="text" id="new-birth" placeholder="1975" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Năm mất</label>
+                        <input type="text" id="new-death" placeholder="Chưa rõ / N/A" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-slate-600 uppercase mb-1">Giới tính</label>
+                    <select id="new-gender" class="w-full px-3 py-2 border border-slate-300 rounded-xl text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none">
+                        <option value="male">Nam</option>
+                        <option value="female">Nữ</option>
+                        <option value="neutral">Khác</option>
+                    </select>
                 </div>
             </div>
-            <div class="bg-gray-50 p-4 flex justify-end gap-2">
-                <button onclick="closeModal()" class="px-4 py-2 text-gray-600 hover:bg-gray-200 rounded-md transition text-sm">Hủy</button>
-                <button onclick="saveMember()" class="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-md transition text-sm font-medium">Lưu thay đổi</button>
+            <div class="px-6 py-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end space-x-2">
+                <button onclick="closeAddModal()" class="px-4 py-2 border border-slate-300 hover:bg-slate-100 text-slate-700 rounded-xl text-sm font-medium transition">
+                    Hủy
+                </button>
+                <button onclick="createNodeFromModal()" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium shadow-md shadow-indigo-200 transition">
+                    Thêm vào bảng
+                </button>
             </div>
         </div>
     </div>
 
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-3 rounded-xl shadow-2xl z-50 flex items-center space-x-3 transform translate-y-20 opacity-0 transition-all duration-300 pointer-events-none">
+        <i id="toast-icon" class="fa-solid fa-circle-check text-emerald-400"></i>
+        <span id="toast-message" class="text-sm font-medium">Thành công!</span>
+    </div>
+
     <script>
-        // ================= DỮ LIỆU MẶC ĐỊNH =================
-        let idCounter = 100;
-        
-        // Tạo một cấu trúc mẫu 8 đời tuyến tính để làm ví dụ
-        const defaultData = {
-            id: 1, name: "Cụ Khởi Tổ", desc: "Đời 1",
-            children: [{
-                id: 2, name: "Ông Tổ Đời 2", desc: "Đời 2",
-                children: [{
-                    id: 3, name: "Ông Tổ Đời 3", desc: "Đời 3",
-                    children: [{
-                        id: 4, name: "Ông Tổ Đời 4", desc: "Đời 4",
-                        children: [{
-                            id: 5, name: "Ông Tổ Đời 5", desc: "Đời 5",
-                            children: [{
-                                id: 6, name: "Ông Tổ Đời 6", desc: "Đời 6",
-                                children: [{
-                                    id: 7, name: "Ông Tổ Đời 7", desc: "Đời 7",
-                                    children: [{
-                                        id: 8, name: "Hậu duệ Đời 8", desc: "Đời 8"
-                                    }]
-                                }]
-                            }]
-                        }]
-                    }]
-                }]
-            }]
+        // --- Application State ---
+        let nodes = [
+            { id: 'node-1', name: 'Cụ Nguyễn Văn Tổ', role: 'Đời thứ 1 - Tổ khảo', birth: '1920', death: '1995', gender: 'male', bio: 'Người khai sáng dòng họ tại địa phương.', x: 450, y: 100 },
+            { id: 'node-2', name: 'Bà Trần Thị Hiền', role: 'Đời thứ 1 - Tổ tỷ', birth: '1925', death: '2010', gender: 'female', bio: 'Hiền thùy, đức độ, tần tảo nuôi con.', x: 750, y: 100 },
+            { id: 'node-3', name: 'Nguyễn Văn Cả', role: 'Đời thứ 2 - Trưởng nam', birth: '1950', death: '', gender: 'male', bio: 'Giáo viên viên hưu trí.', x: 300, y: 320 },
+            { id: 'node-4', name: 'Nguyễn Thị Hai', role: 'Đời thứ 2 - Thứ nữ', birth: '1955', death: '', gender: 'female', bio: 'Kinh doanh tại Hà Nội.', x: 600, y: 320 },
+            { id: 'node-5', name: 'Nguyễn Văn Ba', role: 'Đời thứ 2 - Út nam', birth: '1962', death: '', gender: 'male', bio: 'Kỹ sư xây dựng.', x: 900, y: 320 }
+        ];
+
+        let connections = [
+            { id: 'conn-1', from: 'node-1', to: 'node-3' },
+            { id: 'conn-2', from: 'node-1', to: 'node-4' },
+            { id: 'conn-3', from: 'node-1', to: 'node-5' },
+            { id: 'conn-4', from: 'node-2', to: 'node-3' },
+            { id: 'conn-5', from: 'node-2', to: 'node-4' },
+            { id: 'conn-6', from: 'node-2', to: 'node-5' }
+        ];
+
+        let scale = 1;
+        let panX = 0;
+        let panY = 0;
+        let isPanning = false;
+        let startX = 0;
+        let startY = 0;
+
+        let currentTool = 'select'; // 'select' or 'connect'
+        let connectingFromNodeId = null;
+        let draggingNodeId = null;
+        let dragOffsetX = 0;
+        let dragOffsetY = 0;
+        let selectedNodeId = null;
+
+        // --- DOM Elements ---
+        const canvasContainer = document.getElementById('canvas-container');
+        const canvasContent = document.getElementById('canvas-content');
+        const connectionsSvg = document.getElementById('connections-svg');
+        const inspectorPanel = document.getElementById('inspector-panel');
+
+        // --- Initialization ---
+        window.onload = function() {
+            render();
+            setupPanAndZoom();
+            centerView();
         };
 
-        // Load từ localStorage nếu có, nếu không dùng mặc định
-        let treeData = JSON.parse(localStorage.getItem('familyTreeData')) || defaultData;
+        // --- Rendering Engine ---
+        function render() {
+            // Render nodes
+            canvasContent.innerHTML = '';
+            nodes.forEach(node => {
+                const el = document.createElement('div');
+                el.className = `absolute node-card bg-white rounded-2xl shadow-lg border-2 p-4 w-64 pointer-events-auto cursor-pointer flex flex-col transition-shadow ${
+                    node.gender === 'male' ? 'border-sky-400 bg-gradient-to-b from-sky-50/50 to-white' :
+                    node.gender === 'female' ? 'border-rose-400 bg-gradient-to-b from-rose-50/50 to-white' : 'border-purple-400 bg-gradient-to-b from-purple-50/50 to-white'
+                } ${selectedNodeId === node.id ? 'ring-4 ring-indigo-400 ring-offset-2' : ''}`;
+                
+                el.style.left = `${node.x}px`;
+                el.style.top = `${node.y}px`;
+                el.dataset.id = node.id;
 
-        // ================= BIẾN TOÀN CỤC CHO D3 =================
-        const svg = d3.select("#tree-container");
-        const width = window.innerWidth;
-        const height = window.innerHeight - 64;
-        
-        const g = svg.append("g");
+                let genderIcon = node.gender === 'male' ? '<i class="fa-solid fa-mars text-sky-500"></i>' :
+                                 node.gender === 'female' ? '<i class="fa-solid fa-venus text-rose-500"></i>' : '<i class="fa-solid fa-genderless text-purple-500"></i>';
 
-        // Thiết lập Zoom & Pan
-        const zoom = d3.zoom()
-            .scaleExtent([0.1, 3]) // Phóng to tối đa 3x, thu nhỏ 0.1x
-            .on("zoom", (event) => {
-                g.attr("transform", event.transform);
-            });
-        
-        svg.call(zoom);
+                el.innerHTML = `
+                    <div class="flex items-start justify-between mb-2">
+                        <span class="text-xs font-semibold px-2 py-0.5 rounded-full ${
+                            node.gender === 'male' ? 'bg-sky-100 text-sky-700' :
+                            node.gender === 'female' ? 'bg-rose-100 text-rose-700' : 'bg-purple-100 text-purple-700'
+                        }">${node.role || 'Thành viên'}</span>
+                        <div class="flex items-center space-x-1">
+                            <span class="text-sm">${genderIcon}</span>
+                            <button onclick="event.stopPropagation(); startConnect('${node.id}')" class="text-slate-400 hover:text-indigo-600 p-1 rounded transition" title="Nối dây từ đây">
+                                <i class="fa-solid fa-share-nodes text-xs"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <h4 class="font-bold text-slate-800 text-base mb-0.5 truncate">${node.name}</h4>
+                    <p class="text-xs text-slate-500 mb-2">Sinh: ${node.birth || '---'} ${node.death ? ' - Mất: ' + node.death : ''}</p>
+                    ${node.bio ? `<p class="text-xs text-slate-600 italic bg-white/80 p-1.5 rounded-lg border border-slate-100 line-clamp-2">${node.bio}</p>` : ''}
+                `;
 
-        // Kích thước của mỗi "thẻ" người
-        const nodeWidth = 160;
-        const nodeHeight = 60;
-        
-        // Thiết lập cấu trúc Tree của D3 (nodeSize giúp cây tự động giãn theo chiều ngang bất kể số lượng con)
-        const treeLayout = d3.tree().nodeSize([nodeWidth + 40, 120]);
-
-        // ================= HÀM VẼ CÂY (RENDER) =================
-        function updateTree() {
-            // Chuyển đổi dữ liệu JSON thành D3 Hierarchy
-            const root = d3.hierarchy(treeData);
-            
-            // Áp dụng thuật toán layout
-            treeLayout(root);
-
-            // Cập nhật các đường nối (Links)
-            const link = g.selectAll(".link")
-                .data(root.links(), d => d.target.data.id);
-
-            link.enter()
-                .insert("path", "g")
-                .attr("class", "link")
-                .attr("d", d3.linkVertical()
-                    .x(d => d.x)
-                    .y(d => d.y + nodeHeight/2))
-                .merge(link)
-                .transition().duration(500)
-                .attr("d", d3.linkVertical()
-                    .x(d => d.x)
-                    .y(d => d.y + nodeHeight/2));
-
-            link.exit().remove();
-
-            // Cập nhật các khối người (Nodes)
-            const node = g.selectAll(".node")
-                .data(root.descendants(), d => d.data.id);
-
-            const nodeEnter = node.enter()
-                .append("g")
-                .attr("class", "node")
-                .attr("transform", d => `translate(${d.x},${d.y})`)
-                .on("click", (event, d) => openModal(d)); // Bấm vào để mở bảng chỉnh sửa
-
-            // Vẽ hình chữ nhật
-            nodeEnter.append("rect")
-                .attr("width", nodeWidth)
-                .attr("height", nodeHeight)
-                .attr("x", -nodeWidth / 2)
-                .attr("y", -nodeHeight / 2);
-
-            // Viết Tên
-            nodeEnter.append("text")
-                .attr("dy", "-5px")
-                .attr("text-anchor", "middle")
-                .text(d => truncateText(d.data.name, 20));
-
-            // Viết Mô tả (năm sinh / đời...)
-            nodeEnter.append("text")
-                .attr("class", "generation")
-                .attr("dy", "15px")
-                .attr("text-anchor", "middle")
-                .text(d => truncateText(d.data.desc || "", 25));
-
-            // Merge và Update vị trí
-            const nodeUpdate = nodeEnter.merge(node);
-            
-            nodeUpdate.transition().duration(500)
-                .attr("transform", d => `translate(${d.x},${d.y})`);
-            
-            // Cập nhật text trong trường hợp bị đổi tên
-            nodeUpdate.select("text").text(d => truncateText(d.data.name, 20));
-            nodeUpdate.select("text.generation").text(d => truncateText(d.data.desc || "", 25));
-
-            node.exit().remove();
-
-            // Tự động lưu trữ mỗi khi update
-            localStorage.setItem('familyTreeData', JSON.stringify(treeData));
-        }
-
-        // Cắt chữ nếu quá dài
-        function truncateText(text, length) {
-            if (!text) return "";
-            return text.length > length ? text.substring(0, length) + "..." : text;
-        }
-
-        // Đưa cây vào giữa màn hình
-        function zoomToFit() {
-            svg.transition().duration(750).call(
-                zoom.transform, 
-                d3.zoomIdentity.translate(width / 2, 80).scale(1)
-            );
-        }
-
-        // ================= XỬ LÝ MODAL (CHỈNH SỬA) =================
-        let currentNodeData = null; // Lưu trữ node đang được chỉnh sửa
-
-        function openModal(d) {
-            currentNodeData = d; // 'd' là object hierarchy của D3, chứa d.data là json gốc
-            
-            document.getElementById('member-name').value = d.data.name || "";
-            document.getElementById('member-desc').value = d.data.desc || "";
-            
-            // Nếu là người đứng đầu (cụ tổ), không cho phép xóa
-            const btnDelete = document.getElementById('btn-delete');
-            if (d.depth === 0) {
-                btnDelete.style.display = 'none';
-            } else {
-                btnDelete.style.display = 'block';
-            }
-
-            document.getElementById('edit-modal').classList.add('active');
-        }
-
-        function closeModal() {
-            document.getElementById('edit-modal').classList.remove('active');
-            currentNodeData = null;
-        }
-
-        function saveMember() {
-            if (!currentNodeData) return;
-            
-            const newName = document.getElementById('member-name').value.trim();
-            const newDesc = document.getElementById('member-desc').value.trim();
-            
-            if (newName === "") {
-                alert("Vui lòng nhập họ tên!");
-                return;
-            }
-
-            // Cập nhật vào data gốc
-            currentNodeData.data.name = newName;
-            currentNodeData.data.desc = newDesc;
-            
-            updateTree();
-            closeModal();
-        }
-
-        function addChild() {
-            if (!currentNodeData) return;
-            
-            // Khởi tạo mảng children nếu chưa có
-            if (!currentNodeData.data.children) {
-                currentNodeData.data.children = [];
-            }
-            
-            // Tính số đời tự động (Optional)
-            const currentGeneration = currentNodeData.depth + 1;
-
-            // Thêm người con vào data gốc
-            currentNodeData.data.children.push({
-                id: Date.now() + Math.floor(Math.random() * 1000), // Tạo ID duy nhất
-                name: "Thành viên mới",
-                desc: "Đời " + (currentGeneration + 1)
-            });
-            
-            updateTree();
-            closeModal();
-        }
-
-        function deleteMember() {
-            if (!currentNodeData) return;
-            
-            if (confirm(`Bạn có chắc chắn muốn xóa "${currentNodeData.data.name}" và toàn bộ hậu duệ của người này không?`)) {
-                // Tìm kiếm và xóa node con từ node cha
-                const parent = currentNodeData.parent;
-                if (parent) {
-                    const children = parent.data.children;
-                    const index = children.indexOf(currentNodeData.data);
-                    if (index > -1) {
-                        children.splice(index, 1);
+                // Node drag events
+                el.addEventListener('mousedown', (e) => {
+                    if (currentTool === 'connect') {
+                        e.stopPropagation();
+                        handleConnectClick(node.id);
+                        return;
                     }
-                    // Nếu mảng rỗng thì xóa luôn thuộc tính children
-                    if (children.length === 0) {
-                        delete parent.data.children;
+                    if (e.target.closest('button')) return; // ignore buttons
+                    startDraggingNode(e, node.id);
+                });
+
+                el.addEventListener('click', (e) => {
+                    if (currentTool === 'select') {
+                        e.stopPropagation();
+                        selectNode(node.id);
                     }
-                }
-                updateTree();
-                closeModal();
-            }
+                });
+
+                canvasContent.appendChild(el);
+            });
+
+            renderConnections();
         }
 
-        // ================= NHẬP / XUẤT DỮ LIỆU (JSON) =================
-        function exportData() {
-            const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(treeData, null, 2));
-            const downloadAnchorNode = document.createElement('a');
-            downloadAnchorNode.setAttribute("href",     dataStr);
-            downloadAnchorNode.setAttribute("download", "du_lieu_gia_pha.json");
-            document.body.appendChild(downloadAnchorNode); // Bắt buộc cho firefox
-            downloadAnchorNode.click();
-            downloadAnchorNode.remove();
-        }
+        function renderConnections() {
+            connectionsSvg.innerHTML = '';
+            connections.forEach(conn => {
+                const fromNode = nodes.find(n => n.id === conn.from);
+                const toNode = nodes.find(n => n.id === conn.to);
+                if (!fromNode || !toNode) return;
 
-        function importData(event) {
-            const file = event.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = function(e) {
-                    try {
-                        const importedData = JSON.parse(e.target.result);
-                        if (importedData && importedData.name) {
-                            treeData = importedData;
-                            localStorage.setItem('familyTreeData', JSON.stringify(treeData));
-                            updateTree();
-                            zoomToFit();
-                            alert("Đã tải dữ liệu gia phả thành công!");
-                        } else {
-                            alert("File không đúng định dạng!");
-                        }
-                    } catch (err) {
-                        alert("Lỗi khi đọc file. Vui lòng đảm bảo đây là file .json hợp lệ.");
+                // Approximate center coordinates of node cards (width ~ 256px, height ~ 120px)
+                const x1 = fromNode.x + 128;
+                const y1 = fromNode.y + 100;
+                const x2 = toNode.x + 128;
+                const y2 = toNode.y + 20;
+
+                // Create nice curved path
+                const dx = x2 - x1;
+                const dy = y2 - y1;
+                const cx1 = x1;
+                const cy1 = y1 + dy / 2;
+                const cx2 = x2;
+                const cy2 = y2 - dy / 2;
+
+                const path = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+                path.setAttribute('d', `M ${x1} ${y1} C ${cx1} ${cy1}, ${cx2} ${cy2}, ${x2} ${y2}`);
+                path.setAttribute('class', 'stroke-indigo-400 stroke-[3] fill-none transition-all hover:stroke-indigo-600 cursor-pointer');
+                path.onclick = (e) => {
+                    e.stopPropagation();
+                    if (confirm('Bạn có muốn xóa đường nối này không?')) {
+                        connections = connections.filter(c => c.id !== conn.id);
+                        render();
+                        showToast('Đã xóa đường nối', 'info');
                     }
                 };
-                reader.readAsText(file);
-            }
-            // Reset input file để có thể chọn lại cùng 1 file
-            event.target.value = '';
+                connectionsSvg.appendChild(path);
+            });
         }
 
-        // ================= KHỞI CHẠY =================
-        updateTree();
-        zoomToFit();
+        // --- Pan and Zoom Mechanics ---
+        function setupPanAndZoom() {
+            canvasContainer.addEventListener('mousedown', (e) => {
+                if (e.target === canvasContainer || e.target === canvasContent || e.target === connectionsSvg) {
+                    isPanning = true;
+                    startX = e.clientX - panX;
+                    startY = e.clientY - panY;
+                    canvasContainer.style.cursor = 'grabbing';
+                    selectNode(null);
+                }
+            });
 
-        // Đóng modal khi bấm ra ngoài
-        document.getElementById('edit-modal').addEventListener('click', function(e) {
-            if (e.target === this) {
-                closeModal();
+            window.addEventListener('mousemove', (e) => {
+                if (isPanning) {
+                    panX = e.clientX - startX;
+                    panY = e.clientY - startY;
+                    updateTransform();
+                } else if (draggingNodeId) {
+                    const node = nodes.find(n => n.id === draggingNodeId);
+                    if (node) {
+                        node.x = (e.clientX - dragOffsetX - panX) / scale;
+                        node.y = (e.clientY - dragOffsetY - panY) / scale;
+                        render();
+                    }
+                }
+            });
+
+            window.addEventListener('mouseup', () => {
+                isPanning = false;
+                draggingNodeId = null;
+                canvasContainer.style.cursor = 'grab';
+            });
+
+            canvasContainer.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                const zoomFactor = 1.1;
+                if (e.deltaY < 0) {
+                    scale = Math.min(scale * zoomFactor, 2.5);
+                } else {
+                    scale = Math.max(scale / zoomFactor, 0.3);
+                }
+                updateTransform();
+            }, { passive: false });
+        }
+
+        function updateTransform() {
+            canvasContent.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+            connectionsSvg.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
+        }
+
+        function zoomIn() { scale = Math.min(scale * 1.2, 2.5); updateTransform(); }
+        function zoomOut() { scale = Math.max(scale / 1.2, 0.3); updateTransform(); }
+        function resetZoom() { scale = 1; updateTransform(); }
+
+        function centerView() {
+            if (nodes.length === 0) return;
+            let sumX = nodes.reduce((acc, n) => acc + n.x, 0);
+            let sumY = nodes.reduce((acc, n) => acc + n.y, 0);
+            let avgX = sumX / nodes.length;
+            let avgY = sumY / nodes.length;
+
+            panX = (canvasContainer.clientWidth / 2) - (avgX + 128) * scale;
+            panY = (canvasContainer.clientHeight / 2) - (avgY + 60) * scale;
+            updateTransform();
+        }
+
+        // --- Node Interaction & Inspector ---
+        function startDraggingNode(e, id) {
+            draggingNodeId = id;
+            const node = nodes.find(n => n.id === id);
+            dragOffsetX = e.clientX - (node.x * scale + panX);
+            dragOffsetY = e.clientY - (node.y * scale + panY);
+        }
+
+        function selectNode(id) {
+            selectedNodeId = id;
+            render();
+            if (id) {
+                const node = nodes.find(n => n.id === id);
+                if (node) {
+                    document.getElementById('edit-id').value = node.id;
+                    document.getElementById('edit-name').value = node.name;
+                    document.getElementById('edit-role').value = node.role || '';
+                    document.getElementById('edit-birth').value = node.birth || '';
+                    document.getElementById('edit-death').value = node.death || '';
+                    document.getElementById('edit-gender').value = node.gender || 'male';
+                    document.getElementById('edit-bio').value = node.bio || '';
+                    inspectorPanel.classList.remove('hidden');
+                }
+            } else {
+                inspectorPanel.classList.add('hidden');
             }
-        });
+        }
+
+        function closeInspector() {
+            selectNode(null);
+        }
+
+        function saveInspectorChanges() {
+            const id = document.getElementById('edit-id').value;
+            const node = nodes.find(n => n.id === id);
+            if (node) {
+                node.name = document.getElementById('edit-name').value;
+                node.role = document.getElementById('edit-role').value;
+                node.birth = document.getElementById('edit-birth').value;
+                node.death = document.getElementById('edit-death').value;
+                node.gender = document.getElementById('edit-gender').value;
+                node.bio = document.getElementById('edit-bio').value;
+                render();
+                showToast('Đã lưu thông tin thành viên!', 'success');
+            }
+        }
+
+        function deleteSelectedNode() {
+            const id = document.getElementById('edit-id').value;
+            if (confirm('Bạn có chắc chắn muốn xóa thành viên này?')) {
+                nodes = nodes.filter(n => n.id !== id);
+                connections = connections.filter(c => c.from !== id && c.to !== id);
+                closeInspector();
+                render();
+                showToast('Đã xóa thành viên', 'info');
+            }
+        }
+
+        function setTool(tool) {
+            currentTool = tool;
+            document.getElementById('tool-select').className = tool === 'select' ? 'px-3 py-1.5 rounded-lg text-sm font-medium bg-white text-indigo-600 shadow-sm transition flex items-center gap-1.5' : 'px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-1.5';
+            document.getElementById('tool-connect').className = tool === 'connect' ? 'px-3 py-1.5 rounded-lg text-sm font-medium bg-indigo-600 text-white shadow-sm transition flex items-center gap-1.5' : 'px-3 py-1.5 rounded-lg text-sm font-medium text-slate-600 hover:text-slate-900 transition flex items-center gap-1.5';
+            
+            if (tool === 'connect') {
+                showToast('Chế độ nối dây: Nhấp vào thành viên gốc sau đó nhấp vào thành viên cấp dưới.', 'info');
+            }
+        }
+
+        function startConnect(nodeId) {
+            connectingFromNodeId = nodeId;
+            setTool('connect');
+        }
+
+        function handleConnectClick(nodeId) {
+            if (!connectingFromNodeId) {
+                connectingFromNodeId = nodeId;
+                showToast('Đã chọn thành viên nguồn. Hãy nhấp vào thành viên tiếp theo để kết nối.', 'info');
+            } else {
+                if (connectingFromNodeId === nodeId) {
+                    showToast('Không thể nối với chính thành viên đó!', 'error');
+                    connectingFromNodeId = null;
+                    return;
+                }
+                const exists = connections.some(c => (c.from === connectingFromNodeId && c.to === nodeId) || (c.from === nodeId && c.to === connectingFromNodeId));
+                if (!exists) {
+                    connections.push({ id: 'conn-' + Date.now(), from: connectingFromNodeId, to: nodeId });
+                    render();
+                    showToast('Đã tạo liên kết gia phả thành công!', 'success');
+                } else {
+                    showToast('Liên kết này đã tồn tại!', 'info');
+                }
+                connectingFromNodeId = null;
+                setTool('select');
+            }
+        }
+
+        // --- Modal & Creation ---
+        function openAddModal() {
+            document.getElementById('new-name').value = '';
+            document.getElementById('new-role').value = '';
+            document.getElementById('new-birth').value = '';
+            document.getElementById('new-death').value = '';
+            document.getElementById('add-modal').classList.remove('hidden');
+        }
+
+        function closeAddModal() {
+            document.getElementById('add-modal').classList.add('hidden');
+        }
+
+        function createNodeFromModal() {
+            const name = document.getElementById('new-name').value.trim();
+            if (!name) {
+                showToast('Vui lòng nhập họ và tên!', 'error');
+                return;
+            }
+            const role = document.getElementById('new-role').value.trim();
+            const birth = document.getElementById('new-birth').value.trim();
+            const death = document.getElementById('new-death').value.trim();
+            const gender = document.getElementById('new-gender').value;
+
+            // Place near center of viewport
+            const newX = (-panX + canvasContainer.clientWidth / 2) / scale - 128;
+            const newY = (-panY + canvasContainer.clientHeight / 2) / scale - 60;
+
+            const newNode = {
+                id: 'node-' + Date.now(),
+                name,
+                role,
+                birth,
+                death,
+                gender,
+                bio: '',
+                x: newX,
+                y: newY
+            };
+
+            nodes.push(newNode);
+            closeAddModal();
+            render();
+            selectNode(newNode.id);
+            showToast('Đã thêm thành viên mới!', 'success');
+        }
+
+        // --- Templates & Data Management ---
+        function loadTemplate() {
+            if (confirm('Tải mẫu gia phả mẫu sẽ thay thế bảng hiện tại. Bạn có chắc không?')) {
+                nodes = [
+                    { id: 't-1', name: 'Nguyễn Văn Tổ (Cụ Tổ)', role: 'Đời 1 - Tổ khảo', birth: '1900', death: '1980', gender: 'male', bio: 'Người sáng lập chi họ.', x: 500, y: 50 },
+                    { id: 't-2', name: 'Lê Thị Chính', role: 'Đời 1 - Tổ tỷ', birth: '1905', death: '1990', gender: 'female', bio: 'Vợ cụ tổ.', x: 800, y: 50 },
+                    { id: 't-3', name: 'Nguyễn Văn Trưởng', role: 'Đời 2 - Trưởng nam', birth: '1930', death: '2015', gender: 'male', bio: 'Cựu chiến binh.', x: 350, y: 280 },
+                    { id: 't-4', name: 'Nguyễn Văn Thứ', role: 'Đời 2 - Thứ nam', birth: '1935', death: '2020', gender: 'male', bio: 'Bác sĩ quân y.', x: 750, y: 280 },
+                    { id: 't-5', name: 'Nguyễn Văn Cháu A', role: 'Đời 3 - Trưởng tôn', birth: '1965', death: '', gender: 'male', bio: 'Doanh nhân.', x: 200, y: 500 },
+                    { id: 't-6', name: 'Nguyễn Văn Cháu B', role: 'Đời 3 - Thứ tôn', birth: '1970', death: '', gender: 'male', bio: 'Kỹ sư CNTT.', x: 500, y: 500 }
+                ];
+                connections = [
+                    { id: 'tc-1', from: 't-1', to: 't-3' },
+                    { id: 'tc-2', from: 't-1', to: 't-4' },
+                    { id: 'tc-3', from: 't-2', to: 't-3' },
+                    { id: 'tc-4', from: 't-2', to: 't-4' },
+                    { id: 'tc-5', from: 't-3', to: 't-5' },
+                    { id: 'tc-6', from: 't-3', to: 't-6' }
+                ];
+                render();
+                centerView();
+                showToast('Đã tải mẫu gia phả tiêu chuẩn!', 'success');
+            }
+        }
+
+        function clearBoard() {
+            if (confirm('Bạn có chắc muốn xóa toàn bộ cây gia phả?')) {
+                nodes = [];
+                connections = [];
+                closeInspector();
+                render();
+                showToast('Đã làm sạch bảng trắng', 'info');
+            }
+        }
+
+        function exportJSON() {
+            const data = {
+                title: document.getElementById('board-title').innerText,
+                nodes,
+                connections
+            };
+            const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'cay-gia-pha.json';
+            a.click();
+            URL.revokeObjectURL(url);
+            showToast('Đã xuất file dữ liệu gia phả!', 'success');
+        }
+
+        function importJSON(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                try {
+                    const data = JSON.parse(e.target.result);
+                    if (data.nodes && data.connections) {
+                        nodes = data.nodes;
+                        connections = data.connections;
+                        if (data.title) document.getElementById('board-title').innerText = data.title;
+                        render();
+                        centerView();
+                        showToast('Đã mở file gia phả thành công!', 'success');
+                    } else {
+                        showToast('Định dạng file không hợp lệ!', 'error');
+                    }
+                } catch (err) {
+                    showToast('Lỗi khi đọc file JSON!', 'error');
+                }
+            };
+            reader.readAsText(file);
+        }
+
+        function renameBoard() {
+            const currentName = document.getElementById('board-title').innerText;
+            const newName = prompt('Nhập tên mới cho cây gia phả:', currentName);
+            if (newName && newName.trim() !== '') {
+                document.getElementById('board-title').innerText = newName.trim();
+                showToast('Đã đổi tên bảng!', 'success');
+            }
+        }
+
+        // --- Toast notification helper ---
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            const toastMessage = document.getElementById('toast-message');
+            const toastIcon = document.getElementById('toast-icon');
+
+            toastMessage.innerText = message;
+            if (type === 'success') {
+                toastIcon.className = 'fa-solid fa-circle-check text-emerald-400 text-lg';
+            } else if (type === 'error') {
+                toastIcon.className = 'fa-solid fa-circle-exclamation text-rose-400 text-lg';
+            } else {
+                toastIcon.className = 'fa-solid fa-circle-info text-sky-400 text-lg';
+            }
+
+            toast.classList.remove('translate-y-20', 'opacity-0');
+            setTimeout(() => {
+                toast.classList.add('translate-y-20', 'opacity-0');
+            }, 3000);
+        }
     </script>
 </body>
 </html>
